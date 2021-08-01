@@ -1,0 +1,3 @@
+[submodule "rsrc/busybox"]
+	path = rsrc/busybox
+	url = https://github.com/mirror/busybox.git
