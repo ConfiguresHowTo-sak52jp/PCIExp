@@ -11,7 +11,7 @@ http://wiki.qemu.org/ からダウンロードした。今回使用したバー�
 
 ```
 $ cd qemu-6.0.0
-$ ./configure --target-list="i386-softmmu"
+$ ./configure --target-list="aarch64-softmmu"
 $ make
 ```
 qemu-6.0.0/build/qemu-system-aarch64 が実行バイナリである。  
