@@ -55,3 +55,46 @@ EOF
     return 0
 }
 
+#------ rootfs/の仕上げをする ----
+fix_rootfs()
+{
+    if [ ! -d rootfs ]; then
+        echo "./rootfsが存在しません"
+        return 1
+    fi
+
+    #-- 必要なディレクトリを追加 --
+    local dirs="proc sys dev"
+    local cmd
+    for d in $dirs; do
+        cmd="sudo mkdir -p $d"
+        echo "$cmd"
+        eval $cmd
+    done
+    #-- dev/null追加 --
+    cmd="sudo mknod dev/null c 1 3"
+    echo "$cmd"
+    eval $cmd
+#     #-- init script追加 --
+#     sudo cat <<EOF > rootfs/init
+#  #!/bin/sh
+#  mount -t proc none /proc
+#  mount -t sysfs none /sys
+#  /sbin/mdev -s
+#  exec  /bin/sh
+# EOF
+#     cmd="sudo chmod +x rootfs/init"
+#     echo "$cmd"
+#     eval $cmd
+    #-- modules/lib/がいたらコピーする --
+    if [ -d modules/lib ]; then
+        cmd="sudo cp -pr modules/lib rootfs/"
+        echo "$cmd"
+        eval $cmd
+        cmd="sudo chown -R root:root rootfs/lib"
+        echo "$cmd"
+        eval $cmd
+    fi
+
+    return 0    
+}
