@@ -1,6 +1,5 @@
-export ARCH=arm
-#export CROSS_COMPILE=arm-linux-gnueabi-
-export CROSS_COMPILE=arm-linux-gnueabihf-
+export ARCH=arm64
+export CROSS_COMPILE=aarch64-linux-gnu-
 export INSTALL_MOD_PATH=`pwd`/modules
 
 #---- ext4fsフォーマットのRAWイメージを作成する ----
