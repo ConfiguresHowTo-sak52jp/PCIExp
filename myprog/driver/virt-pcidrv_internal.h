@@ -1,0 +1,4 @@
+#ifndef _VIRT_PCIDRV_INTERNAL_H_
+#define _VIRT_PCIDRV_INTERNAL_H_
+
+#endif // _VIRT_PCIDRV_INTERNAL_H_
