@@ -5,4 +5,4 @@ qemu-6.0.0/build/qemu-system-aarch64 \
     -append "rootwait root=/dev/vda console=ttyAMA0" \
     -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 \
     -drive file=rsrc/rootfs.ext4,if=none,format=raw,id=hd0 \
-    -device virtio-blk-device,drive=hd0
+    -device virtio-blk-device,drive=hd0 $*
