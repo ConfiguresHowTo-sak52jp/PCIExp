@@ -13,7 +13,7 @@ CFILES = virt-pcidrv.c
 obj-m := vpci.o
 vpci-objs := $(CFILES:.c=.o)
 
-ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement
+ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement -D$(ARCH)
 
 
 all:
