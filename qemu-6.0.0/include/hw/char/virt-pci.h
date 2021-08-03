@@ -2,7 +2,13 @@
 #define _VIRT_PCI_H_
 
 #undef DEBUG_PRINT
-#define DEBUG_PRINT(fmt, ...) printf("%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
+#define DEBUG_PRINT(fmt, ...) printk(KERN_DEBUG "[DEBUG]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
+
+#undef INFO_PRINT
+#define INFO_PRINT(fmt, ...) printk(KERN_INFO "[INFO]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
+
+#undef ERROR_PRINT
+#define ERROR_PRINT(fmt, ...) printk(KERN_ERR "[ERROR]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
 
 //--- MMIOとPIO領域サイズ(256 byte)
 #define VIRT_PCI_MMIO_MEMSIZE (0x100)

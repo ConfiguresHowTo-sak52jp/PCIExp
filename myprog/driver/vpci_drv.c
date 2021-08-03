@@ -14,13 +14,8 @@
 #include <linux/dma-mapping.h>
 #include <linux/irqreturn.h>
 
-#if 0
-#include <asm/current.h>
-#include <asm/uaccess.h>
-#include <asm/io.h>
-#endif // 0
-
-#include "virt-pcidrv.h"
+#include "vpci_drv.h"
+#include "vpci_drv_internal.h"
 
 // デバイスに関する情報
 MODULE_LICENSE("Dual BSD/GPL");
@@ -83,7 +78,75 @@ static long vpci_ioctl(
     unsigned int cmd,
     unsigned long arg)
 {
-    DEBUG_PRINT("vpic_ioctl\n");
+    FENTER;
+    long ret = 0;
+    
+    VpciIoCtlParam *up = (VpciIoCtlParam *)arg;
+    VirtPciData_t *d = filp->private_data;
+
+    VpciIoCtlParam *kp = kmalloc(sizeof(VpciIoCtlParam), GFP_KERNEL);
+    uint32_t *wdata = NULL;
+    uint32_t *rdata = NULL;
+    ADDR2UINT base = (ADDR2UINT)d->mmio_addr;
+    uint32_t *addr = NULL;
+    switch (cmd) {
+        case VPCI_IOC_DBGWRITE:
+            DEBUG_PRINT("VPCI_IOC_DBGWRITE\n");
+            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) == 0) {
+                ERROR_PRINT("copy_from_user() failed");
+                ret = -EFAULT;
+                goto END;
+            }
+            // 書き込みデータを取得
+            wdata = kmalloc(kp->wdataNum*sizeof(uint32_t), GFP_KERNEL);
+            if (copy_from_user(wdata, kp->wdata, kp->wdataNum*sizeof(uint32_t)) == 0) {
+                ERROR_PRINT("copy_from_user() failed");
+                ret = -EFAULT;
+                goto END;
+            }
+            // wdata[0]=addr, wdata[1..wdataNum-1]=val
+            DEBUG_PRINT("RegOffset=%u,Num=%u\n", wdata[0], kp->wdataNum-1);
+            addr = (uint32_t*)(base+wdata[0]);
+            for (int i = 1; i < kp->wdataNum; i++)
+                REG_WRITE(addr++, wdata[i]);
+            kfree(wdata); wdata = NULL;
+            break;
+        case VPCI_IOC_DBGREAD:
+            DEBUG_PRINT("VPCI_IOC_DBGREAD\n");
+            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) == 0) {
+                ERROR_PRINT("copy_from_user() failed");
+                ret = -EFAULT;
+                goto END;
+            }
+            // 読み込みデータをレジスタから取得
+            rdata = kmalloc(kp->rdataNum*sizeof(uint32_t), GFP_KERNEL);
+            uint32_t regAddr = 0;
+            if (copy_from_user(&regAddr, kp->wdata, sizeof(uint32_t)) == 0) {
+                ERROR_PRINT("copy_from_user() failed");
+                ret = -EFAULT;
+                goto END;
+            }
+            DEBUG_PRINT("RegOffset=%u,Num=%u\n", regAddr, kp->rdataNum);
+            addr = (uint32_t*)(base+regAddr);
+            for (int i = 0; i < kp->rdataNum; i++)
+                rdata[i] = REG_READ(addr++);
+            if (copy_to_user(kp->rdata, rdata, kp->rdataNum*sizeof(uint32_t)) == 0) {
+                ERROR_PRINT("copy_to_user() failed");
+                ret = -EFAULT;
+                goto END;
+            }
+            kfree(rdata); rdata = NULL;
+            break;
+        default:
+            ret = -EFAULT;
+            break;
+    }
+END:
+    kfree(kp);
+    kfree(rdata);
+    kfree(wdata);
+    
+    FEXIT;
     return 0;
 }
 
@@ -91,14 +154,20 @@ static long vpci_ioctl(
 /* open時に呼ばれる関数 */
 static int vpci_open(struct inode *inode, struct file *file)
 {
-    INFO_PRINT("vpci_open\n");
+    FENTER;
+    file->private_data = virtPciData;
+    FEXIT;
     return 0;
 }
 
 /* close時に呼ばれる関数 */
 static int vpci_close(struct inode *inode, struct file *file)
 {
-    INFO_PRINT("vpci_close\n");
+    FENTER;
+
+    file->private_data = NULL;
+    
+    FEXIT;
     return 0;
 }
 
@@ -106,7 +175,9 @@ static int vpci_close(struct inode *inode, struct file *file)
 static ssize_t vpci_read(
     struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-    INFO_PRINT("vpci_read\n");
+    FENTER;
+
+    FEXIT;
     return count;
 }
 
@@ -114,7 +185,9 @@ static ssize_t vpci_read(
 static ssize_t vpci_write(
     struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
-    INFO_PRINT("vpci_write\n");
+    FENTER;
+
+    FEXIT;
     return count;
 }
 
@@ -149,7 +222,7 @@ static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
 static int vpci_pci_probe(struct pci_dev *pdev,
                           const struct pci_device_id *id)
 {
-    INFO_PRINT("vpci_pci_probe\n");
+    FENTER;
     
     virtPciData = kmalloc(sizeof(VirtPciData_t), GFP_KERNEL);
     if (virtPciData == NULL) {
@@ -278,12 +351,15 @@ END_01:
         kfree(virtPciData);
         virtPciData = NULL;
     }
-    
+
+    FEXIT;
     return ret;
 }
 
 static void vpci_pci_remove(struct pci_dev *pdev)
 {
+    FENTER;
+    
     kfree(virtPciData->sdma_buff);
     dma_free_coherent(
         &pdev->dev, VIRT_PCI_CDMA_BUFFER_SIZE, virtPciData->cdma_buff,
@@ -295,6 +371,8 @@ static void vpci_pci_remove(struct pci_dev *pdev)
     pci_disable_device(pdev);
     kfree(virtPciData);
     virtPciData = NULL;
+
+    FEXIT;
 }
 
 static struct pci_driver vpci_pci_driver =
@@ -309,17 +387,19 @@ static struct pci_driver vpci_pci_driver =
 /* ロード(insmod)時に呼ばれる関数 */
 static int vpci_init(void)
 {
-    DEBUG_PRINT("vpci_init\n");
+    FENTER;
 
     int alloc_ret = 0;
     int cdev_err = 0;
     dev_t dev;
-
+    int ret = 0;
+    
     // 空いているメジャー番号を確保する
     alloc_ret = alloc_chrdev_region(&dev, MINOR_BASE, MINOR_NUM, DRIVER_NAME);
     if (alloc_ret != 0) {
         ERROR_PRINT("alloc_chrdev_region = %d\n", alloc_ret);
-        return -1;
+        ret = -EBUSY;
+        goto END_01;
     }
 
     // 取得したdev( = メジャー番号 + マイナー番号)からメジャー番号を取得して保持しておく
@@ -333,18 +413,17 @@ static int vpci_init(void)
     // このデバイスドライバ(cdev)をカーネルに登録する
     cdev_err = cdev_add(&vpci_cdev, dev, MINOR_NUM);
     if (cdev_err != 0) {
-        ERROR_PRINT("cdev_add = %d\n", alloc_ret);
-        unregister_chrdev_region(dev, MINOR_NUM);
-        return -1;
+        ERROR_PRINT("cdev_add = %d\n", cdev_err);
+        ret = -EBUSY;
+        goto END_77;
     }
 
     // このデバイスのクラス登録をする(/sys/class/vpci/ を作る)
     vpci_class = class_create(THIS_MODULE, DRIVER_NAME);
     if (IS_ERR(vpci_class)) {
-        ERROR_PRINT("class_create\n");
-        cdev_del(&vpci_cdev);
-        unregister_chrdev_region(dev, MINOR_NUM);
-        return -1;
+        ERROR_PRINT("class_create() failed\n");
+        ret = -EBUSY;
+        goto END_88;
     }
 
     // /sys/class/vpci/vpci* を作る
@@ -355,14 +434,40 @@ static int vpci_init(void)
                       NULL,
                       "vpci%d", minor);
     }
+
+    // PCIドライバとして登録する
+    ret = pci_register_driver(&vpci_pci_driver);
+    if (ret) {
+        ERROR_PRINT("pci_register_driver() failed:%d\n", ret);
+        goto END_99;
+    }
+
+END_99:
+    if (ret) {
+        for (int minor = MINOR_BASE; minor < MINOR_BASE + MINOR_NUM; minor++) {
+            device_destroy(vpci_class, MKDEV(vpci_major, minor));
+        }
+        class_destroy(vpci_class);
+    }
+
+END_88:
+    if (ret) {
+        cdev_del(&vpci_cdev);
+    }
+
+END_77:
+    if (ret)
+        unregister_chrdev_region(dev, MINOR_NUM);
     
-    return pci_register_driver(&vpci_pci_driver);
+END_01:
+    FEXIT;
+    return ret;
 }
 
 /* アンロード(rmmod)時に呼ばれる関数 */
 static void vpci_exit(void)
 {
-    DEBUG_PRINT("vpci_exit\n");
+    FENTER;
 
     // --- PCIドライバから取り除く ---
     pci_unregister_driver(&vpci_pci_driver);
@@ -384,6 +489,7 @@ static void vpci_exit(void)
     // このデバイスドライバで使用していたメジャー番号の登録を取り除く
     unregister_chrdev_region(dev, MINOR_NUM);
 
+    FEXIT;
 }
 
 module_init(vpci_init);

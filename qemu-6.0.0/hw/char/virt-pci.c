@@ -73,6 +73,7 @@ static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     VirtPciState *s = (VirtPciState *)opaque;
     
+    DEBUG_PRINT("addr=0x%08x\n", (uint32_t)addr);
 
     switch (addr) {
     case REG_VERSION:
@@ -87,8 +88,6 @@ static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
         return s->dma_total_size;
     case REG_DMA_SRC_SIZE:
         return s->dma_src_size;
-    defualt:
-        break;
     }
     return 0;
 }
@@ -106,18 +105,25 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 	
     switch (addr) {
     case REG_VERSION:
+        s->version = val;
         break;
     case REG_CTRL:
+        s->ctrl = val;
         break;
     case REG_INT_STATUS:
+        s->int_status = val;
         break;
     case REG_DMA_SRC_ADDR:
+        s->dma_src_addr = val;
         break;
     case REG_DMA_TOTAL_SIZE:
+        s->dma_total_size = val;
         break;
     case REG_DMA_SRC_SIZE:
+        s->dma_src_size = val;
         break;
     defualt:
+        ERROR_PRINT("不正なアドレスが指定された:%d\n", addr);
         break;
     }
 }

@@ -1,27 +1,12 @@
-#ifndef _VIRT_PCI_H_
-#define _VIRT_PCI_H_
+#ifndef _VPCI_DRV_H_
+#define _VPCI_DRV_H_
 
-#undef DEBUG_PRINT
-#define DEBUG_PRINT(fmt, ...) printk(KERN_DEBUG "[DEBUG]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
+#include <linux/types.h>
 
-#undef INFO_PRINT
-#define INFO_PRINT(fmt, ...) printk(KERN_INFO "[INFO]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
-
-#undef ERROR_PRINT
-#define ERROR_PRINT(fmt, ...) printk(KERN_ERR "[ERROR]%s/L.%d:" fmt, __FUNCTION__, __LINE__, ## __VA_ARGS__)
-
-//--- MMIOとPIO領域サイズ(256 byte)
-#define VIRT_PCI_MMIO_MEMSIZE (0x100)
-#define VIRT_PCI_PIO_MEMSIZE  (0x100)
-
-//--- DMAで使う内部バッファサイズ(4096 byte)
-#define VIRT_PCI_CDMA_BUFFER_SIZE (0x1000)
-#define VIRT_PCI_SDMA_BUFFER_SIZE (0x1000)
-
-//--- PCIのベンダーIDとデバイスID ----
-#define VIRT_PCI_VENDER_ID (0x1234)
-#define VIRT_PCI_DEVICE_ID (0x0001)
-
+/*
+ * 本番ではレジスタ定義をユーザー空間に公開することはないが、検討段階では
+ * デバッグをやりやすくするためにレジスタのオフセットを共有する。
+ */
 //--- 仮想レジスタアドレス定義 ---
 // Version
 #define REG_VERSION         (0)
@@ -42,20 +27,25 @@
 // DMA consistent buffer length
 #define REG_CDMA_LEN        (32)
 
-//--- Controlレジスタビットフィールド取り出し ---
-#define CTRL_KICK(r)        ((r)&0x1)
-#define CTRL_RESERVED(r)    (((r)&~0x1)>>1)
+#include <linux/ioctl.h>
 
-//--- Interrupt要因フラグ ---
-#define INT_CONVERT_FINISH      (1<<0)
-#define INT_CONVERT_CONTINUE    (1<<1)
+// IOCTL用コマンドのタイプ
+#define VPCI_IOC_TYPE 'V'
 
-//--- Interrupt要因マスク ---
-#define INT_CONVERT_FINISH_MASK      (~INT_CONVERT_FINISH)
-#define INT_CONVERT_CONTINUE_MASK    (~INT_CONVERT_CONTINUE)
+// レジスタに値を書き込む（デバッグ用）
+#define VPCI_IOC_DBGWRITE \
+    _IOW(VPCI_IOC_TYPE, 1, VpciIoCtlParam)
 
-//--- mmioとpioのBAR no
-#define MMIO_BAR    (0)
-#define PIO_BAR     (1)
+// レジスタから値を読み込む（デバッグ用）
+#define VPCI_IOC_DBGREAD \
+    _IOR(VPCI_IOC_TYPE, 3, VpciIoCtlParam)
 
-#endif // _VIRT_PCI_H_
+// IOCTRLパラメータ
+typedef struct {
+    uint32_t *wdata;
+    uint32_t *rdata;
+    uint32_t wdataNum; // 4byteデータの数(NOT Bytes!)
+    uint32_t rdataNum; // 4byteデータの数(NOT Bytes!)
+} VpciIoCtlParam;
+
+#endif // _VPCI_DRV_H_
