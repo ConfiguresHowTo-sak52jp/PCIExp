@@ -34,6 +34,9 @@ typedef struct {
     uint32_t dma_src_size;
     uint32_t dma_total_size;
 
+    // 全てのレジスタ値（未定義領域含）を配列で記憶する
+    uint32_t reg_val[VIRT_PCI_MMIO_MEMSIZE/4];
+
     // Memory/IO
     MemoryRegion mmio;
     MemoryRegion portio;
@@ -79,6 +82,9 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 
     DEBUG_PRINT("addr=0x%08x,val=0x%08x\n", (uint32_t)addr, (uint32_t)val);
 	
+    if (addr < VIRT_PCI_MMIO_MEMSIZE)
+        s->reg_val[addr/4] = val;
+#if 0    
     switch (addr) {
     case REG_VERSION: // 0
         s->version = val;
@@ -102,6 +108,7 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         ERROR_PRINT("不正なアドレスが指定された:%lu\n", addr);
         break;
     }
+#endif // 0
 }
 
 
@@ -110,10 +117,14 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
  */
 static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    VirtPciState *s = (VirtPciState *)opaque;
-    
     DEBUG_PRINT("addr=0x%08x\n", (uint32_t)addr);
 
+    VirtPciState *s = (VirtPciState *)opaque;
+    uint64_t ret = 0;
+    if (addr < VIRT_PCI_MMIO_MEMSIZE)
+        ret = s->reg_val[addr/4];
+
+#if 0
     switch (addr) {
     case REG_VERSION:
         return s->version;
@@ -128,7 +139,9 @@ static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
     case REG_DMA_SRC_SIZE:
         return s->dma_src_size;
     }
-    return 0;
+#endif // 0
+    
+    return ret;
 }
 
 //--- mmioの振る舞い定義 ---
