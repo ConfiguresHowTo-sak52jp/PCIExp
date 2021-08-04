@@ -66,31 +66,6 @@ static void virt_pci_pio_write(void *opaque, hwaddr addr, uint64_t val,
     PCIDevice *pdev = PCI_DEVICE(s);
 }
 
-/*
- * レジスタ値を返す
- */
-static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
-{
-    VirtPciState *s = (VirtPciState *)opaque;
-    
-    DEBUG_PRINT("addr=0x%08x\n", (uint32_t)addr);
-
-    switch (addr) {
-    case REG_VERSION:
-        return s->version;
-    case REG_CTRL:
-        return s->ctrl;
-    case REG_INT_STATUS:
-        return s->int_status;
-    case REG_DMA_SRC_ADDR:
-        return s->dma_src_size;
-    case REG_DMA_TOTAL_SIZE:
-        return s->dma_total_size;
-    case REG_DMA_SRC_SIZE:
-        return s->dma_src_size;
-    }
-    return 0;
-}
 
 /*
  * TODO 動作を定義する
@@ -129,11 +104,36 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 }
 
 
+/*
+ * レジスタ値を返す
+ */
+static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
+{
+    VirtPciState *s = (VirtPciState *)opaque;
+    
+    DEBUG_PRINT("addr=0x%08x\n", (uint32_t)addr);
+
+    switch (addr) {
+    case REG_VERSION:
+        return s->version;
+    case REG_CTRL:
+        return s->ctrl;
+    case REG_INT_STATUS:
+        return s->int_status;
+    case REG_DMA_SRC_ADDR:
+        return s->dma_src_size;
+    case REG_DMA_TOTAL_SIZE:
+        return s->dma_total_size;
+    case REG_DMA_SRC_SIZE:
+        return s->dma_src_size;
+    }
+    return 0;
+}
 
 //--- mmioの振る舞い定義 ---
 static const MemoryRegionOps virt_pci_mmio_ops = {
-    .read = virt_pci_mmio_read,
     .write = virt_pci_mmio_write,
+    .read = virt_pci_mmio_read,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = {
         .min_access_size = 4,

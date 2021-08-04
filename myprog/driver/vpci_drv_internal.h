@@ -1,6 +1,8 @@
 #ifndef _VPCI_DRV_INTERNAL_H_
 #define _VPCI_DRV_INTERNAL_H_
 
+#include <asm/io.h>
+
 // ----- LOGGER ------
 #ifdef DEBUG_PRINT
 #  undef DEBUG_PRINT
@@ -48,7 +50,8 @@
 #  define ADDR2UINT uint64_t
 #endif
 
-#define REG_READ(addr) *((volatile uint32_t*)(addr))
+//#define REG_READ(addr) *((volatile uint32_t*)(addr))
+#define REG_READ(addr) readl(addr)
 #define REG_WRITE(addr, val) do {*((volatile uint32_t*)(addr)) = val;} while(0)
 
 //--- MMIOとPIO領域サイズ(256 byte)

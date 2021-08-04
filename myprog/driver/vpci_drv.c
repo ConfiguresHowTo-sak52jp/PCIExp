@@ -13,6 +13,7 @@
 #include <linux/ioport.h>
 #include <linux/dma-mapping.h>
 #include <linux/irqreturn.h>
+#include <linux/uaccess.h>
 
 #include "vpci_drv.h"
 #include "vpci_drv_internal.h"
@@ -79,12 +80,19 @@ static long vpci_ioctl(
     unsigned long arg)
 {
     FENTER;
+    DEBUG_PRINT("arg(param)=%lu\n", arg);
     long ret = 0;
     
     VpciIoCtlParam *up = (VpciIoCtlParam *)arg;
     VirtPciData_t *d = filp->private_data;
 
     VpciIoCtlParam *kp = kmalloc(sizeof(VpciIoCtlParam), GFP_KERNEL);
+    if (kp == NULL) {
+        ERROR_PRINT("kmalloc() failed");
+        return -ENOMEM;
+    }
+    memset(kp, 0, sizeof(VpciIoCtlParam));
+    
     uint32_t *wdata = NULL;
     uint32_t *rdata = NULL;
     ADDR2UINT base = (ADDR2UINT)d->mmio_addr;
@@ -92,14 +100,14 @@ static long vpci_ioctl(
     switch (cmd) {
         case VPCI_IOC_DBGWRITE:
             DEBUG_PRINT("VPCI_IOC_DBGWRITE\n");
-            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) == 0) {
+            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
                 ERROR_PRINT("copy_from_user() failed");
                 ret = -EFAULT;
                 goto END;
             }
             // 書き込みデータを取得
             wdata = kmalloc(kp->wdataNum*sizeof(uint32_t), GFP_KERNEL);
-            if (copy_from_user(wdata, kp->wdata, kp->wdataNum*sizeof(uint32_t)) == 0) {
+            if (copy_from_user(wdata, kp->wdata, kp->wdataNum*sizeof(uint32_t)) != 0) {
                 ERROR_PRINT("copy_from_user() failed");
                 ret = -EFAULT;
                 goto END;
@@ -107,13 +115,15 @@ static long vpci_ioctl(
             // wdata[0]=addr, wdata[1..wdataNum-1]=val
             DEBUG_PRINT("RegOffset=%u,Num=%u\n", wdata[0], kp->wdataNum-1);
             addr = (uint32_t*)(base+wdata[0]);
-            for (int i = 1; i < kp->wdataNum; i++)
+            for (int i = 1; i < kp->wdataNum; i++) {
+                DEBUG_PRINT("addr=%llu,val=%u\n", (uint64_t)addr, wdata[1]);
                 REG_WRITE(addr++, wdata[i]);
+            }
             kfree(wdata); wdata = NULL;
             break;
         case VPCI_IOC_DBGREAD:
             DEBUG_PRINT("VPCI_IOC_DBGREAD\n");
-            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) == 0) {
+            if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
                 ERROR_PRINT("copy_from_user() failed");
                 ret = -EFAULT;
                 goto END;
@@ -121,16 +131,18 @@ static long vpci_ioctl(
             // 読み込みデータをレジスタから取得
             rdata = kmalloc(kp->rdataNum*sizeof(uint32_t), GFP_KERNEL);
             uint32_t regAddr = 0;
-            if (copy_from_user(&regAddr, kp->wdata, sizeof(uint32_t)) == 0) {
+            if (copy_from_user(&regAddr, kp->wdata, sizeof(uint32_t)) != 0) {
                 ERROR_PRINT("copy_from_user() failed");
                 ret = -EFAULT;
                 goto END;
             }
             DEBUG_PRINT("RegOffset=%u,Num=%u\n", regAddr, kp->rdataNum);
             addr = (uint32_t*)(base+regAddr);
-            for (int i = 0; i < kp->rdataNum; i++)
+            for (int i = 0; i < kp->rdataNum; i++) {
+                DEBUG_PRINT("addr=%llu\n", (uint64_t)addr);
                 rdata[i] = REG_READ(addr++);
-            if (copy_to_user(kp->rdata, rdata, kp->rdataNum*sizeof(uint32_t)) == 0) {
+            }
+            if (copy_to_user(kp->rdata, rdata, kp->rdataNum*sizeof(uint32_t)) != 0) {
                 ERROR_PRINT("copy_to_user() failed");
                 ret = -EFAULT;
                 goto END;
@@ -254,8 +266,8 @@ static int vpci_pci_probe(struct pci_dev *pdev,
     virtPciData->mmio_base = pci_resource_start(pdev, MMIO_BAR);
     virtPciData->mmio_len = pci_resource_len(pdev, MMIO_BAR);
     virtPciData->mmio_flag = pci_resource_flags(pdev, MMIO_BAR);
-    virtPciData->mmio_addr = ioremap(virtPciData->mmio_base,
-                                     virtPciData->mmio_len);
+    virtPciData->mmio_addr = ioremap(
+        virtPciData->mmio_base, virtPciData->mmio_len);
     DEBUG_PRINT("mmio setting success!\n");
     DEBUG_PRINT("base=0x%08x,len=%d,addr=%p\n",
                 virtPciData->mmio_base,
