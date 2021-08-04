@@ -18,6 +18,7 @@
 #include "qom/object.h"
 #include "hw/qdev-properties-system.h"
 #include "migration/vmstate.h"
+#include "hw/irq.h"
 
 #include "hw/char/virt-pci.h"
 
@@ -79,26 +80,26 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     DEBUG_PRINT("addr=0x%08x,val=0x%08x\n", (uint32_t)addr, (uint32_t)val);
 	
     switch (addr) {
-    case REG_VERSION:
+    case REG_VERSION: // 0
         s->version = val;
         break;
-    case REG_CTRL:
+    case REG_CTRL: // 4
         s->ctrl = val;
         break;
-    case REG_INT_STATUS:
+    case REG_INT_STATUS: // 8
         s->int_status = val;
         break;
-    case REG_DMA_SRC_ADDR:
+    case REG_DMA_SRC_ADDR: // 16
         s->dma_src_addr = val;
         break;
-    case REG_DMA_TOTAL_SIZE:
+    case REG_DMA_TOTAL_SIZE: // 20
         s->dma_total_size = val;
         break;
-    case REG_DMA_SRC_SIZE:
+    case REG_DMA_SRC_SIZE: // 24
         s->dma_src_size = val;
         break;
-    defualt:
-        ERROR_PRINT("不正なアドレスが指定された:%d\n", addr);
+    default:
+        ERROR_PRINT("不正なアドレスが指定された:%lu\n", addr);
         break;
     }
 }
@@ -121,7 +122,7 @@ static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
     case REG_INT_STATUS:
         return s->int_status;
     case REG_DMA_SRC_ADDR:
-        return s->dma_src_size;
+        return s->dma_src_addr;
     case REG_DMA_TOTAL_SIZE:
         return s->dma_total_size;
     case REG_DMA_SRC_SIZE:
@@ -172,7 +173,8 @@ static void virt_pci_reset(VirtPciState *s)
 
 static void qdev_virt_pci_reset(DeviceState *dev)
 {
-    VirtPciState *s = DO_UPCAST(VirtPciState, parent_obj, dev);
+    VirtPciState *s = DO_UPCAST(VirtPciState, parent_obj,
+                                DO_UPCAST(PCIDevice, qdev, dev));
     virt_pci_reset(s);
 }
 
@@ -190,8 +192,7 @@ static void virt_pci_realize(PCIDevice *pdev, Error **err)
                           "virt_pci_mmio", VIRT_PCI_MMIO_MEMSIZE*2);
     memory_region_init_io(&s->portio, OBJECT(s), &virt_pci_pio_ops, s,
                           "virt_pci_portio", VIRT_PCI_PIO_MEMSIZE*2);
-    DEBUG_PRINT("mmio=%p,pio=%p\n", s->mmio, s->portio);
-
+ 
     // BARの設定
     pci_register_bar(pdev, MMIO_BAR,
                      PCI_BASE_ADDRESS_SPACE_MEMORY, &s->mmio);
