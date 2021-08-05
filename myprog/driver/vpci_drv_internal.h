@@ -67,16 +67,21 @@
 #define VIRT_PCI_DEVICE_ID (0x0001)
 
 //--- Controlレジスタビットフィールド取り出し ---
-#define CTRL_KICK(r)        ((r)&0x1)
-#define CTRL_RESERVED(r)    (((r)&~0x1)>>1)
+#define CTRL_KICK_2(r)       ((r)&0x1) // 2倍処理キック
+#define CTRL_KICK_4(r)       ((r)&0x2) // 4倍処理キック
 
 //--- Interrupt要因フラグ ---
-#define INT_CONVERT_FINISH      (1<<0)
-#define INT_CONVERT_CONTINUE    (1<<1)
+#define INT_FINISH_2         (1<<0) // 2倍処理完了
+#define INT_FINISH_4         (1<<1) // 4倍処理完了
+
+//--- 2倍処理キックフラグ ---
+#define KICK_2_FLG (1<<0)
+//--- 4倍処理キックフラグ ---
+#define KICK_4_FLG (1<<1)
 
 //--- Interrupt要因マスク ---
-#define INT_CONVERT_FINISH_MASK      (~INT_CONVERT_FINISH)
-#define INT_CONVERT_CONTINUE_MASK    (~INT_CONVERT_CONTINUE)
+#define INT_FINISH_2_CLEAR    (~INT_FINISH_2)
+#define INT_FINISH_4_CLEAR    (~INT_FINISH_4)
 
 //--- mmioとpioのBAR no
 #define MMIO_BAR    (0)

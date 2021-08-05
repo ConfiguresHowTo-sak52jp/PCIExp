@@ -3,10 +3,13 @@
  * 下記の仕様を持つ仮想デバイスである
  * 1.一つのpio領域と1つのmmio領域を持つ
  * 2.mmio領域は32ビットアドレス空間へマッピングされる、レジスタ空間である(unprefetchable)。
- * 3.coherent領域をバッファとして入力データをDMAでリードする機能を持つ。
- *   バッファからの読み込みが終わるたびに割り込みを発生し、設定したサイズを全て
- *   読み込むまで割り込みを上げる。全て完了した時のステータスと、途中のステータスは
- *   区別する。
+ * 3.自身がバスマスタとなりDMA転送を制御する。デモ機能として、下記の2つの機能を持つ。
+ *  3-1.ドライバから入力バッファを取得し、DMAを使って内部バッファに取り込む。
+ *      次に内部バッファ値を2倍して、DMAを用いて結果を出力バッファへ書き込む。一連の
+ *      処理が終わったら割り込みを上げる。
+ *  3-2.ドライバから入力バッファ及び出力バッファを取得する。入力バッファからDMAを使って
+ *      内部バッファに取り込む。次に内部バッファ値を4倍して、DMAを用いて結果を出力
+ *      バッファへ書き込む。一連の処理が終わったら割り込みを上げる。
  */
 
 #include "qemu/osdep.h"
@@ -30,9 +33,6 @@ typedef struct {
     uint32_t ctrl;
     uint32_t int_status;
     uint32_t int_mask;
-    uint32_t dma_src_addr;
-    uint32_t dma_src_size;
-    uint32_t dma_total_size;
 
     // 全てのレジスタ値（未定義領域含）を配列で記憶する
     uint32_t reg_val[VIRT_PCI_MMIO_MEMSIZE/4];
@@ -45,34 +45,36 @@ typedef struct {
     qemu_irq irq;
     
     // for DMA operation
-    //   使うかどうか分からないがデバッグ用に確保しておく
-    dma_addr_t cdma_addr;
-    dma_addr_t sdma_addr;
-    uint32_t cdma_buf[VIRT_PCI_DMA_BUFFER_SIZE/4];
-    uint32_t sdma_buf[VIRT_PCI_DMA_BUFFER_SIZE/4];
+    dma_addr_t dma_src_addr;
+    dma_addr_t dma_dst_addr;
+    uint32_t dma_size;
+    uint32_t dma_buf[VIRT_PCI_DMA_BUFFER_SIZE/4];
+
 } VirtPciState;
 
 #define TYPE_VIRT_PCI "virt-pci"
 
-//--- PIO領域は何もしない設定とする ---
+//--- PIO領域は何もしない設定 ---
 static uint64_t virt_pci_pio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    VirtPciState *s = (VirtPciState*)opaque;
-    
-
-    return 0;
+    DEBUG_PRINT("Nothing to do!\n");
+    return 0xbeefbeef;
 }
 
 static void virt_pci_pio_write(void *opaque, hwaddr addr, uint64_t val,
                                unsigned size)
 {
-    VirtPciState *s = (VirtPciState*)opaque;
-    PCIDevice *pdev = PCI_DEVICE(s);
+    DEBUG_PRINT("Nothing to do!\n");
 }
 
+static void multiple(int m, uint32_t *buf, uint32_t len)
+{
+    for (int i = 0; i < len; i++)
+        buf[i] *= m;
+}
 
-/*
- * TODO 動作を定義する
+/**
+ * @brief レジスタ書き込みに対する処理
  */
 static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
@@ -81,39 +83,82 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     PCIDevice *pdev = PCI_DEVICE(s);
 
     DEBUG_PRINT("addr=0x%08x,val=0x%08x\n", (uint32_t)addr, (uint32_t)val);
-	
+
+    // R onlyの時は何もしない
+    switch (addr) {
+    case REG_VERSION:
+    case REG_INT_STATUS:
+        return;
+    }
+
+    // まず一様に履歴記録。処理結果に応じて変更する場合は後で上書き
     if (addr < VIRT_PCI_MMIO_MEMSIZE)
         s->reg_val[addr/4] = val;
-#if 0    
+
     switch (addr) {
-    case REG_VERSION: // 0
-        s->version = val;
+    case REG_CTRL:
+        // 2倍処理キック
+        if (CTRL_KICK_2(val)) {
+            // Buffer1からDMA read->2倍する->Buffer2にDMA write
+            pci_dma_read(pdev, s->dma_src_addr, s->dma_buf, s->dma_size);
+            multiple(2, s->dma_buf, s->dma_size);
+            pci_dma_write(pdev, s->dma_dst_addr, s->dma_buf, s->dma_size);
+            // 割り込みマスクされていなかったら割り込み上げる
+            s->int_status |= INT_FINISH_2;
+            s->reg_val[REG_INT_STATUS/4] = s->int_status;
+            if (INT_FINISH_2 & s->int_mask)
+                pci_irq_assert(pdev);
+        }
+        // 4倍処理キック
+        else if (CTRL_KICK_4(val)) {
+            // Buffer1からDMA read->4倍する->Buffer2にDMA write
+            pci_dma_read(pdev, s->dma_src_addr, s->dma_buf, s->dma_size);
+            multiple(4, s->dma_buf, s->dma_size);
+            pci_dma_write(pdev, s->dma_dst_addr, s->dma_buf, s->dma_size);
+            // 割り込みマスクされていなかったら割り込み上げる
+            s->int_status |= INT_FINISH_4;
+            s->reg_val[REG_INT_STATUS/4] = s->int_status;
+            if (INT_FINISH_4 & s->int_mask)
+                pci_irq_assert(pdev);
+        }
         break;
-    case REG_CTRL: // 4
-        s->ctrl = val;
+    case REG_INT_CLEAR:
+        // 有効なフラグでなかったら何もしない
+        if (!(val & INT_FINISH_2) && !(val & INT_FINISH_4)) {
+            DEBUG_PRINT("Invalid flag:%08x", (uint32_t)val);
+            break;
+        }
+        // 割り込み実行中でなければ何もしない
+        if (!s->int_status) {
+            DEBUG_PRINT("Not in interrupt state. Nothing to do\n");
+            break;
+        }
+        // 指定されたビットをクリアし要因が全て無くなったら割り込みを下げる
+        s->int_status &= ~val;
+        s->reg_val[REG_INT_STATUS/4] = s->int_status;
+        if (s->int_status == 0)
+            pci_irq_deassert(pdev);
         break;
-    case REG_INT_STATUS: // 8
-        s->int_status = val;
-        break;
-    case REG_DMA_SRC_ADDR: // 16
+    case REG_DMA_SRC_ADDR:
         s->dma_src_addr = val;
         break;
-    case REG_DMA_TOTAL_SIZE: // 20
-        s->dma_total_size = val;
+    case REG_DMA_SIZE:
+        s->dma_size = val;
         break;
-    case REG_DMA_SRC_SIZE: // 24
-        s->dma_src_size = val;
+    case REG_DMA_DST_ADDR:
+        s->dma_dst_addr = val;
         break;
-    default:
-        ERROR_PRINT("不正なアドレスが指定された:%lu\n", addr);
+    case REG_INT_MASK:
+        // 有効なマスク値が設定されている時だけ処理
+        if ((~val) & INT_FINISH_2 || (~val) & INT_FINISH_4)
+            s->int_mask = val;
         break;
     }
-#endif // 0
 }
 
 
-/*
- * レジスタ値を返す
+/**
+ * @brief レジスタ値を返す
  */
 static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -124,22 +169,13 @@ static uint64_t virt_pci_mmio_read(void *opaque, hwaddr addr, unsigned size)
     if (addr < VIRT_PCI_MMIO_MEMSIZE)
         ret = s->reg_val[addr/4];
 
-#if 0
+    // W onlyの時は 0xbeefbeef を返す
     switch (addr) {
-    case REG_VERSION:
-        return s->version;
     case REG_CTRL:
-        return s->ctrl;
-    case REG_INT_STATUS:
-        return s->int_status;
-    case REG_DMA_SRC_ADDR:
-        return s->dma_src_addr;
-    case REG_DMA_TOTAL_SIZE:
-        return s->dma_total_size;
-    case REG_DMA_SRC_SIZE:
-        return s->dma_src_size;
+    case REG_INT_CLEAR:
+        ret = 0xbeefbeef;
+        break;
     }
-#endif // 0
     
     return ret;
 }
@@ -166,22 +202,20 @@ static const MemoryRegionOps virt_pci_pio_ops = {
     },
 };
 
+/**
+ * @brief HWの擬似的なリセット実行
+ */
 static void virt_pci_reset(VirtPciState *s)
 {
     s->ctrl = 0;
     s->int_status = 0;
     s->int_mask = 0;
     s->dma_src_addr = 0;
-    s->dma_src_size = 0;
-    s->dma_total_size = 0;
+    s->dma_dst_addr = 0;
+    s->dma_size = 0;
 
-    s->cdma_addr = 0;
-    s->sdma_addr = 0;
-
-    for (int i = 0; i < VIRT_PCI_DMA_BUFFER_SIZE/4; i++) {
-        s->cdma_buf[i] = 0;
-        s->sdma_buf[i] = 0;
-    }
+    memset(s->dma_buf, 0, sizeof(s->dma_buf));
+    memset(s->reg_val, 0, sizeof(s->reg_val));
 }
 
 static void qdev_virt_pci_reset(DeviceState *dev)

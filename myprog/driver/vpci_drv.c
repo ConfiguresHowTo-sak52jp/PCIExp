@@ -14,6 +14,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/irqreturn.h>
 #include <linux/uaccess.h>
+#include <asm/barrier.h>
 
 #include "vpci_drv.h"
 #include "vpci_drv_internal.h"
@@ -61,10 +62,17 @@ typedef struct {
     
     // DMA関連
     dma_addr_t cdma_addr;
-    dma_addr_t sdma_addr;
     void *cdma_buff;
-    void *sdma_buff;
+    void *sdma_src_buff;
+    void *sdma_dst_buff;
+
+    // DMA割り込み処理関連
     wait_queue_head_t sdma_q;
+    struct completion cmn;
+    struct completion cmn4;
+    spinlock_t slock;
+    uint32_t int_status;
+    struct tasklet_struct tasklet;
     
 } VirtPciData_t;
 
@@ -91,13 +99,171 @@ static long vpci_ioctl(
         ERROR_PRINT("kmalloc() failed");
         return -ENOMEM;
     }
-    memset(kp, 0, sizeof(VpciIoCtlParam));
+    if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
+        ERROR_PRINT("copy_from_user() failed");
+        ret = -EFAULT;
+        goto END;
+    }
     
     uint32_t *wdata = NULL;
     uint32_t *rdata = NULL;
     ADDR2UINT base = (ADDR2UINT)d->mmio_addr;
     uint32_t *addr = NULL;
+    uint32_t regVal = 0;
     switch (cmd) {
+        case VPCI_IOC_GET_VERSION:
+            DEBUG_PRINT("VPCI_IOC_GET_VERSION\n");
+            // レジスタアドレス->addr
+            addr = (uint32_t *)(base+REG_VERSION);
+            regVal = REG_READ(addr);
+            if (copy_to_user(kp->val, &regVal, sizeof(uint32_t)) != 0) {
+                ERROR_PRINT("copy_to_user() failed\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            break;
+
+        case VPCI_IOC_KICK_MUL2:
+            /*
+             * 2倍処理を起動する
+             *   + 2倍処理の時はcoherent bufferを使う
+             *   + 確保済みバッファ長より大きなサイズの処理要求が来たら
+             *     エラーとする（本来は分割処理すべき）。
+             */
+            DEBUG_PRINT("VPCI_IOC_KICK_MUL2\n");
+            if (4*kp->dataNum > VIRT_PCI_CDMA_BUFFER_SIZE) {
+                ERROR_PRINT("Length over:%u bytes\n", 4*kp->dataNum);
+                ret = -EDOM;
+                goto END;
+            }
+            // 入力をコピー
+            if (copy_from_user(d->cdma_buff, kp->inData, 4*kp->dataNum) != 0) {
+                ERROR_PRINT("copy_from_user() failed\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            // DMAの入出力バッファにcoherent bufferを設定
+            addr = (uint32_t *)(base+REG_DMA_SRC_ADDR);
+            REG_WRITE(addr, d->cdma_addr);
+            addr = (uint32_t *)(base+REG_DMA_DST_ADDR);
+            REG_WRITE(addr, d->cdma_addr);
+            // Size設定
+            addr = (uint32_t *)(base+REG_DMA_SIZE);
+            REG_WRITE(addr, 4*kp->dataNum);
+            // 待機用リソース(completion)の初期化
+            init_completion(&d->cmn);
+            // wmb->kick->wait
+            wmb();
+            addr = (uint32_t *)(base+REG_CTRL);
+            REG_WRITE(addr, KICK_2_FLG);
+            wait_for_completion(&d->cmn);
+            // HW処理完了->User空間にコピーして返る
+            if (copy_to_user(kp->outData, d->cdma_buff, 4*kp->dataNum) != 0) {
+                ERROR_PRINT("copy_to_user() failed!\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            DEBUG_PRINT("VPCI_IOC_KICK_MUL2 success!\n");
+            break;
+            
+        case VPCI_IOC_KICK_MUL4:
+            /*
+             * 4倍処理を起動する
+             *   + 4倍処理の時はstream bufferを使う
+             *   + 確保済みバッファ長より大きなサイズの処理要求が来たら
+             *     エラーとする（本来は分割処理すべき）。
+             */
+            DEBUG_PRINT("VPCI_IOC_KICK_MUL4\n");
+            if (4*kp->dataNum > VIRT_PCI_SDMA_BUFFER_SIZE) {
+                ERROR_PRINT("Length over:%u bytes\n", 4*kp->dataNum);
+                ret = -EDOM;
+                goto END;
+            }
+            // 入力をコピー
+            if (copy_from_user(d->sdma_src_buff, kp->inData, 4*kp->dataNum) != 0) {
+                ERROR_PRINT("copy_from_user() failed\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            // stream bufferをDMA空間にマッピング
+            dma_addr_t srcDmaAddr = dma_map_single(
+                &d->pdev->dev, d->sdma_src_buff, VIRT_PCI_SDMA_BUFFER_SIZE,
+                DMA_TO_DEVICE);
+            if (dma_mapping_error(&d->pdev->dev, srcDmaAddr)) {
+                ERROR_PRINT("dma_map_single() failed!\n");
+                dma_unmap_single(&d->pdev->dev, srcDmaAddr, VIRT_PCI_SDMA_BUFFER_SIZE,
+                                 DMA_TO_DEVICE);
+                ret = -ENOMEM;
+                goto END;
+            }
+            dma_addr_t dstDmaAddr = dma_map_single(
+                &d->pdev->dev, d->sdma_dst_buff, VIRT_PCI_SDMA_BUFFER_SIZE,
+                DMA_FROM_DEVICE);
+            if (dma_mapping_error(&d->pdev->dev, dstDmaAddr)) {
+                ERROR_PRINT("dma_map_single() failed!\n");
+                dma_unmap_single(&d->pdev->dev, srcDmaAddr, VIRT_PCI_SDMA_BUFFER_SIZE,
+                                 DMA_TO_DEVICE);
+                dma_unmap_single(&d->pdev->dev, dstDmaAddr, VIRT_PCI_SDMA_BUFFER_SIZE,
+                                 DMA_FROM_DEVICE);
+                ret = -ENOMEM;
+                goto END;
+            }
+            // DMAアドレスを設定
+            addr = (uint32_t *)(base+REG_DMA_SRC_ADDR);
+            REG_WRITE(addr, srcDmaAddr);
+            addr = (uint32_t *)(base+REG_DMA_DST_ADDR);
+            REG_WRITE(addr, dstDmaAddr);
+            // Size設定
+            addr = (uint32_t *)(base+REG_DMA_SIZE);
+            REG_WRITE(addr, 4*kp->dataNum);
+            // 待機用リソース(completion)の初期化
+            init_completion(&d->cmn4);
+            // srcDmaAddrを同期
+            dma_sync_single_for_device(
+                &d->pdev->dev, srcDmaAddr, 4*kp->dataNum, DMA_TO_DEVICE);
+            // wmb->kick->wait
+            wmb();
+            addr = (uint32_t *)(base+REG_CTRL);
+            REG_WRITE(addr, KICK_4_FLG);
+            wait_for_completion(&d->cmn4);
+            // HW処理完了
+            // 同期->unmap->User空間にコピーして返る
+            dma_sync_single_for_cpu(
+                &d->pdev->dev, dstDmaAddr, 4*kp->dataNum, DMA_FROM_DEVICE);
+            dma_unmap_single(&d->pdev->dev, srcDmaAddr, VIRT_PCI_SDMA_BUFFER_SIZE,
+                             DMA_TO_DEVICE);
+            dma_unmap_single(&d->pdev->dev, dstDmaAddr, VIRT_PCI_SDMA_BUFFER_SIZE,
+                             DMA_FROM_DEVICE);
+            if (copy_to_user(kp->outData, d->sdma_dst_buff, 4*kp->dataNum) != 0) {
+                ERROR_PRINT("copy_to_user() failed!\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            DEBUG_PRINT("VPCI_IOC_KICK_MUL4 success!\n");
+            break;
+
+        case VPCI_IOC_READ_REG:
+            DEBUG_PRINT("VPCI_IOC_READ_REG\n");
+            addr = (uint32_t *)(base+kp->addr);
+            regVal = REG_READ(addr);
+            if (copy_to_user(kp->val, &regVal, sizeof(uint32_t)) != 0) {
+                ERROR_PRINT("copy_to_user() failed!\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            break;
+
+        case VPCI_IOC_WRITE_REG:
+            DEBUG_PRINT("VPCI_IOC_WRITE_REG\n");
+            if (copy_from_user(&regVal, kp->val, sizeof(uint32_t)) != 0) {
+                ERROR_PRINT("copy_from_user() failed!\n");
+                ret = -EFAULT;
+                goto END;
+            }
+            addr = (uint32_t *)(base+kp->addr);
+            REG_WRITE(addr, regVal);
+            break;
+
         case VPCI_IOC_DBGWRITE:
             DEBUG_PRINT("VPCI_IOC_DBGWRITE\n");
             if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
@@ -121,6 +287,7 @@ static long vpci_ioctl(
             }
             kfree(wdata); wdata = NULL;
             break;
+
         case VPCI_IOC_DBGREAD:
             DEBUG_PRINT("VPCI_IOC_DBGREAD\n");
             if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
@@ -224,9 +391,55 @@ static struct pci_device_id vpci_pci_ids[] = {
 
 MODULE_DEVICE_TABLE(pci, vpci_pci_ids);
 
-// 割り込みハンドラ定義
+
+/**
+ * @brief タスクレットハンドラ
+ *  + 要因調査
+ *  + completion()の実行
+ * 以上を実行する。なおcompletion()は割禁ないで呼べないため、
+ * ここで実行している。
+ */
+static void vpci_tasklet_handler(struct tasklet_struct *arg)
+{
+    VirtPciData_t *p = (VirtPciData_t *)arg->data;
+    if (p->int_status & INT_FINISH_2) {
+        complete(&p->cmn);
+        p->int_status &= INT_FINISH_2_CLEAR;
+    }
+    if (p->int_status & INT_FINISH_4) {
+        complete(&p->cmn4);
+        p->int_status &= INT_FINISH_4_CLEAR;
+    }
+}
+
+
+/**
+ * @brief 割り込みハンドラ
+ *  + 要因調査
+ *  + 割り込みクリア
+ *  + タスクレットのスケジューリング
+ * 以上を割り込み禁止内で実行する
+ */
 static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
 {
+    VirtPciData_t *p = (VirtPciData_t *)dev_id;
+    ulong flags;
+
+    spin_lock_irqsave(&p->slock, flags);
+    // int_statusチェック
+    uint32_t is = REG_READ((uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_STATUS));
+    uint32_t *intClearReg = (uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_CLEAR);
+    if (is & INT_FINISH_2) {
+        REG_WRITE(intClearReg, INT_FINISH_2);
+        p->int_status |= INT_FINISH_2;
+    }
+    if (is & INT_FINISH_4) {
+        REG_WRITE(intClearReg, INT_FINISH_4);
+        p->int_status |= INT_FINISH_4;
+    }
+    tasklet_schedule(&p->tasklet);
+    spin_unlock_irqrestore(&p->slock, flags);
+    
     return IRQ_HANDLED;
 }
 
@@ -294,7 +507,7 @@ static int vpci_pci_probe(struct pci_dev *pdev,
 
     // 割り込みハンドラ設定
     ret = request_irq(pdev->irq, vpci_irq_handler,
-                      0, DRIVER_NAME, pdev);
+                      0, DRIVER_NAME, virtPciData);
 
     if (ret) {
         ERROR_PRINT("request_irq() failed!\n");
@@ -323,9 +536,11 @@ static int vpci_pci_probe(struct pci_dev *pdev,
                 virtPciData->cdma_addr);
     
     // DMAで使うストリームバッファ確保
-    virtPciData->sdma_buff =
+    virtPciData->sdma_src_buff =
             kmalloc(VIRT_PCI_SDMA_BUFFER_SIZE, GFP_KERNEL);
-    if (virtPciData->sdma_buff == NULL) {
+    virtPciData->sdma_dst_buff =
+            kmalloc(VIRT_PCI_SDMA_BUFFER_SIZE, GFP_KERNEL);
+    if (virtPciData->sdma_src_buff == NULL || virtPciData->sdma_dst_buff == NULL) {
         ERROR_PRINT("kmaolloc() failed!\n");
         ret = -ENOMEM;
         goto END_50;
@@ -333,6 +548,17 @@ static int vpci_pci_probe(struct pci_dev *pdev,
 
     // DMAのwaitqueue初期化
     init_waitqueue_head(&virtPciData->sdma_q);
+
+    // 2倍/4倍処理のcompletion初期化
+    init_completion(&virtPciData->cmn);
+    init_completion(&virtPciData->cmn4);
+
+    // 割り込みハンドラで使うspinlock初期化
+    spin_lock_init(&virtPciData->slock);
+
+    // 割り込みハンドラで使うtasklet初期化
+    virtPciData->tasklet.callback = vpci_tasklet_handler;
+    virtPciData->tasklet.data = (unsigned long)virtPciData;
         
 END_50:
     if (ret)
@@ -372,7 +598,8 @@ static void vpci_pci_remove(struct pci_dev *pdev)
 {
     FENTER;
     
-    kfree(virtPciData->sdma_buff);
+    kfree(virtPciData->sdma_src_buff);
+    kfree(virtPciData->sdma_dst_buff);
     dma_free_coherent(
         &pdev->dev, VIRT_PCI_CDMA_BUFFER_SIZE, virtPciData->cdma_buff,
         virtPciData->cdma_addr);
