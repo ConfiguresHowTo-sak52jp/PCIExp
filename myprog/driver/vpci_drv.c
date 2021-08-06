@@ -443,7 +443,7 @@ static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
     VirtPciData_t *p = (VirtPciData_t *)dev_id;
     ulong flags;
 
-    //spin_lock_irqsave(&p->slock, flags);
+    spin_lock_irqsave(&p->slock, flags);
     // int_statusチェック
     uint32_t is = REG_READ((uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_STATUS));
     uint32_t *intClearReg = (uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_CLEAR);
@@ -460,7 +460,7 @@ static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
         p->int_status |= INT_DOINT;
     }
     //tasklet_schedule(&p->tasklet);
-    //spin_unlock_irqrestore(&p->slock, flags);
+    spin_unlock_irqrestore(&p->slock, flags);
     
     FEXIT;
     return IRQ_HANDLED;
