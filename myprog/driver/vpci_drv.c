@@ -604,7 +604,7 @@ static void vpci_pci_remove(struct pci_dev *pdev)
         &pdev->dev, VIRT_PCI_CDMA_BUFFER_SIZE, virtPciData->cdma_buff,
         virtPciData->cdma_addr);
     pci_clear_master(pdev);
-    free_irq(pdev->irq, pdev);
+    free_irq(pdev->irq, virtPciData);
     iounmap(virtPciData->mmio_addr);
     pci_release_regions(pdev);
     pci_disable_device(pdev);
