@@ -216,6 +216,9 @@ static void virt_pci_reset(VirtPciState *s)
 
     memset(s->dma_buf, 0, sizeof(s->dma_buf));
     memset(s->reg_val, 0, sizeof(s->reg_val));
+
+    // versionレジスタをセット(ver.0xbeefbeef)
+    s->reg_val[0] = 0xbeefbeef;
 }
 
 static void qdev_virt_pci_reset(DeviceState *dev)
