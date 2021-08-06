@@ -69,17 +69,22 @@
 //--- Controlレジスタビットフィールド取り出し ---
 #define CTRL_KICK_2(r)       ((r)&0x1) // 2倍処理キック
 #define CTRL_KICK_4(r)       ((r)&0x2) // 4倍処理キック
+#define CTRL_RESET(r)        ((r)&0x4) // Reset
+#define CTRL_DOINT(r)        ((r)&0x8) // 意味なく割り込み
 
 //--- Interrupt要因フラグ ---
 #define INT_FINISH_2         (1<<0) // 2倍処理完了
 #define INT_FINISH_4         (1<<1) // 4倍処理完了
+#define INT_DOINT            (1<<3) // 
 
 //--- 2倍処理キックフラグ ---
 #define KICK_2_FLG (1<<0)
 //--- 4倍処理キックフラグ ---
 #define KICK_4_FLG (1<<1)
+//--- Reset処理フラグ ---
+#define RESET_FLG  (1<<2)
 
-//--- Interrupt要因マスク ---
+//--- Interrupt要因クリア ---
 #define INT_FINISH_2_CLEAR    (~INT_FINISH_2)
 #define INT_FINISH_4_CLEAR    (~INT_FINISH_4)
 

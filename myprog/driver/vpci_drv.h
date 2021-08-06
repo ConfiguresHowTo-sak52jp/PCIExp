@@ -50,6 +50,10 @@
 #define VPCI_IOC_READ_REG \
     _IOR(VPCI_IOC_TYPE, 6, VpciIoCtlParam)
 
+// SW Reset
+#define VPCI_IOC_RESET \
+    _IOW(VPCI_IOC_TYPE, 7, VpciIoCtlParam)
+
 // レジスタに値を書き込む（デバッグ用）
 #define VPCI_IOC_DBGWRITE \
     _IOW(VPCI_IOC_TYPE, 100, VpciIoCtlParam)
@@ -57,6 +61,9 @@
 // レジスタから値を読み込む（デバッグ用）
 #define VPCI_IOC_DBGREAD \
     _IOR(VPCI_IOC_TYPE, 101, VpciIoCtlParam)
+
+#define VPCI_IOC_DOINT \
+    _IOW(VPCI_IOC_TYPE, 102, VpciIoCtlParam)
 
 // IOCTRLパラメータ
 typedef struct {

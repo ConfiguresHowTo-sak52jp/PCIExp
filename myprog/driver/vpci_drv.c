@@ -14,6 +14,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/irqreturn.h>
 #include <linux/uaccess.h>
+#include <linux/delay.h>
 #include <asm/barrier.h>
 
 #include "vpci_drv.h"
@@ -264,6 +265,12 @@ static long vpci_ioctl(
             REG_WRITE(addr, regVal);
             break;
 
+        case VPCI_IOC_RESET:
+            DEBUG_PRINT("VPCI_IOC_RESET\n");
+            addr = (uint32_t *)(base+REG_CTRL);
+            REG_WRITE(addr, RESET_FLG);
+            break;
+
         case VPCI_IOC_DBGWRITE:
             DEBUG_PRINT("VPCI_IOC_DBGWRITE\n");
             if (copy_from_user(kp, up, sizeof(VpciIoCtlParam)) != 0) {
@@ -316,6 +323,14 @@ static long vpci_ioctl(
             }
             kfree(rdata); rdata = NULL;
             break;
+
+        case VPCI_IOC_DOINT:
+            DEBUG_PRINT("VPCI_IOC_DOINT");
+            addr = (uint32_t*)(base+REG_CTRL);
+            REG_WRITE(addr, INT_DOINT);
+            msleep(1000);
+            break;
+            
         default:
             ret = -EFAULT;
             break;
@@ -401,6 +416,7 @@ MODULE_DEVICE_TABLE(pci, vpci_pci_ids);
  */
 static void vpci_tasklet_handler(struct tasklet_struct *arg)
 {
+    FENTER;
     VirtPciData_t *p = (VirtPciData_t *)arg->data;
     if (p->int_status & INT_FINISH_2) {
         complete(&p->cmn);
@@ -410,6 +426,7 @@ static void vpci_tasklet_handler(struct tasklet_struct *arg)
         complete(&p->cmn4);
         p->int_status &= INT_FINISH_4_CLEAR;
     }
+    FEXIT;
 }
 
 
@@ -422,10 +439,11 @@ static void vpci_tasklet_handler(struct tasklet_struct *arg)
  */
 static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
 {
+    FENTER;
     VirtPciData_t *p = (VirtPciData_t *)dev_id;
     ulong flags;
 
-    spin_lock_irqsave(&p->slock, flags);
+    //spin_lock_irqsave(&p->slock, flags);
     // int_statusチェック
     uint32_t is = REG_READ((uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_STATUS));
     uint32_t *intClearReg = (uint32_t *)((ADDR2UINT)p->mmio_addr+REG_INT_CLEAR);
@@ -437,9 +455,14 @@ static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
         REG_WRITE(intClearReg, INT_FINISH_4);
         p->int_status |= INT_FINISH_4;
     }
-    tasklet_schedule(&p->tasklet);
-    spin_unlock_irqrestore(&p->slock, flags);
+    if (is & INT_DOINT) {
+        REG_WRITE(intClearReg, INT_DOINT);
+        p->int_status |= INT_DOINT;
+    }
+    //tasklet_schedule(&p->tasklet);
+    //spin_unlock_irqrestore(&p->slock, flags);
     
+    FEXIT;
     return IRQ_HANDLED;
 }
 
@@ -507,12 +530,12 @@ static int vpci_pci_probe(struct pci_dev *pdev,
 
     // 割り込みハンドラ設定
     ret = request_irq(pdev->irq, vpci_irq_handler,
-                      0, DRIVER_NAME, virtPciData);
-
+                      IRQF_SHARED|IRQF_TRIGGER_HIGH, DRIVER_NAME, virtPciData);
     if (ret) {
         ERROR_PRINT("request_irq() failed!\n");
         goto END_20;
     }
+    DEBUG_PRINT("request_irq() success!:irq=%d\n", pdev->irq);
 
     // DMAの設定
     ret = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));

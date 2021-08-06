@@ -74,6 +74,26 @@ static void multiple(int m, uint32_t *buf, uint32_t len)
 }
 
 /**
+ * @brief HWの擬似的なリセット実行
+ */
+static void virt_pci_reset(VirtPciState *s)
+{
+    s->ctrl = 0;
+    s->int_status = 0;
+    s->int_mask = 0xffffffff;
+    s->dma_src_addr = 0;
+    s->dma_dst_addr = 0;
+    s->dma_size = 0;
+
+    memset(s->dma_buf, 0, sizeof(s->dma_buf));
+    memset(s->reg_val, 0, sizeof(s->reg_val));
+    s->reg_val[REG_INT_MASK/4] = s->int_mask;
+
+    // versionレジスタをセット(ver.0x12345678)
+    s->reg_val[0] = 0x12345678;
+}
+
+/**
  * @brief レジスタ書き込みに対する処理
  */
 static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
@@ -101,13 +121,19 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         if (CTRL_KICK_2(val)) {
             // Buffer1からDMA read->2倍する->Buffer2にDMA write
             pci_dma_read(pdev, s->dma_src_addr, s->dma_buf, s->dma_size);
+            DEBUG_PRINT("pci_dma_read() success\n");
             multiple(2, s->dma_buf, s->dma_size);
+            DEBUG_PRINT("multiple() success\n");
             pci_dma_write(pdev, s->dma_dst_addr, s->dma_buf, s->dma_size);
+            DEBUG_PRINT("pci_dma_write() success\n");
             // 割り込みマスクされていなかったら割り込み上げる
             s->int_status |= INT_FINISH_2;
             s->reg_val[REG_INT_STATUS/4] = s->int_status;
-            if (INT_FINISH_2 & s->int_mask)
+            DEBUG_PRINT("int_status=%08x,int_mask=%08x\n", s->int_status, s->int_mask);
+            if (INT_FINISH_2 & s->int_mask) {
                 pci_irq_assert(pdev);
+                DEBUG_PRINT("pci_irq_assert() success\n");
+            }
         }
         // 4倍処理キック
         else if (CTRL_KICK_4(val)) {
@@ -121,10 +147,19 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
             if (INT_FINISH_4 & s->int_mask)
                 pci_irq_assert(pdev);
         }
+        // SW Reset
+        else if (CTRL_RESET(val)) {
+            virt_pci_reset(s);
+        }
+        else if (CTRL_DOINT(val)) {
+            s->int_status |= INT_DOINT;
+            s->reg_val[REG_INT_STATUS/4] = s->int_status;
+            pci_irq_assert(pdev);
+        }
         break;
     case REG_INT_CLEAR:
         // 有効なフラグでなかったら何もしない
-        if (!(val & INT_FINISH_2) && !(val & INT_FINISH_4)) {
+        if (!(val & INT_FINISH_2) && !(val & INT_FINISH_4) && !(val & INT_DOINT)) {
             DEBUG_PRINT("Invalid flag:%08x", (uint32_t)val);
             break;
         }
@@ -152,6 +187,8 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         // 有効なマスク値が設定されている時だけ処理
         if ((~val) & INT_FINISH_2 || (~val) & INT_FINISH_4)
             s->int_mask = val;
+        else
+            DEBUG_PRINT("Illegal val to REG_INT_MASK:%08x\n", (uint32_t)val);
         break;
     }
 }
@@ -202,24 +239,6 @@ static const MemoryRegionOps virt_pci_pio_ops = {
     },
 };
 
-/**
- * @brief HWの擬似的なリセット実行
- */
-static void virt_pci_reset(VirtPciState *s)
-{
-    s->ctrl = 0;
-    s->int_status = 0;
-    s->int_mask = 0;
-    s->dma_src_addr = 0;
-    s->dma_dst_addr = 0;
-    s->dma_size = 0;
-
-    memset(s->dma_buf, 0, sizeof(s->dma_buf));
-    memset(s->reg_val, 0, sizeof(s->reg_val));
-
-    // versionレジスタをセット(ver.0xbeefbeef)
-    s->reg_val[0] = 0xbeefbeef;
-}
 
 static void qdev_virt_pci_reset(DeviceState *dev)
 {
@@ -233,8 +252,9 @@ static void virt_pci_realize(PCIDevice *pdev, Error **err)
     VirtPciState *s = DO_UPCAST(VirtPciState, parent_obj, pdev);
   
     // 割り込みパラメータ
+    //pdev->config[PCI_INTERRUPT_LINE] = 0;
     pdev->config[PCI_INTERRUPT_PIN] = 1;
-    s->irq = pci_allocate_irq(&s->parent_obj);
+    //s->irq = pci_allocate_irq(&s->parent_obj);
     DEBUG_PRINT("IRQ=%p\n", s->irq);
 
     // mmio領域とPIO領域を登録
@@ -256,7 +276,7 @@ static void virt_pci_realize(PCIDevice *pdev, Error **err)
 static void virt_pci_exit(PCIDevice *pdev)
 {
     VirtPciState *s = DO_UPCAST(VirtPciState, parent_obj, pdev);
-    qemu_free_irq(s->irq);
+    //qemu_free_irq(s->irq);
     
 }
 
