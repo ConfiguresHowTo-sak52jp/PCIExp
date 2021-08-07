@@ -42,14 +42,16 @@ int main(int ac, char *av[])
                HW_VERSION, rdata);
     }
     else
-        printf("@@@@ Phase1 success! @@@@\n");
+        printf("@@@@ VPCI_IOC_GET_VERSION success! @@@@\n");
 
-#if 0
     // VPCI_IOC_DOINT
-    printf("Issued DoInt\n");
     ret = ioctl(fd, VPCI_IOC_DOINT, &p);
-    printf("DoInt DONE\n");
-#endif // 0
+    if (ret) {
+        printf("ioctl(VPCI_IOC_DOINT) failed:ret=%d:%s\n",
+               ret, strerror(ret));
+        return -1;
+    }
+    printf("@@@@ VPCI_IOC_DOINT success! @@@@\n");
 
     // VPCI_IOC_WRITE_REG/READ_REGのテスト
     uint32_t wdata = 0;
@@ -87,7 +89,7 @@ int main(int ac, char *av[])
         }
     }
     if (!errflag)
-        printf("@@@@ Phase2 success! @@@@\n");
+        printf("@@@@ VPCI_IOC_WRITE_REG/READ_REG success! @@@@\n");
 
     // VPCI_IOC_RESETのテスト
     ret = ioctl(fd, VPCI_IOC_RESET, &p);
@@ -123,7 +125,7 @@ int main(int ac, char *av[])
         }
     }
     if (!errflag)
-        printf("@@@@ Phase3 success! @@@@\n");
+        printf("@@@@ VPCI_IOC_RESET success! @@@@\n");
     
     // VPCI_IOC_KICK_MUL2のテスト
     uint32_t max = 0x80000000;
@@ -150,7 +152,7 @@ int main(int ac, char *av[])
          }
     }
     if (!errflag)
-        printf("@@@@ Phase4 success! @@@@\n");
+        printf("@@@@ VPCI_IOC_KICK_MUL2 success! @@@@\n");
     free(p.outData);
 
     // VPCI_IOC_KICK_MUL4のテスト
@@ -177,7 +179,7 @@ int main(int ac, char *av[])
          }
     }
     if (!errflag)
-        printf("@@@@ Phase5 success! @@@@\n");
+        printf("@@@@ VPCI_IOC_KICK_MUL4 success! @@@@\n");
     free(p.outData);
     
     close(fd);

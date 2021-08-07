@@ -193,10 +193,12 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         break;
     case REG_INT_MASK:
         // 有効なマスク値が設定されている時だけ処理
-        if ((~val) & INT_FINISH_2 || (~val) & INT_FINISH_4)
+        if ((~val) & INT_FINISH_2 || (~val) & INT_FINISH_4 || (~val) & INT_DOINT) {
             s->int_mask = val;
-        else
+        }
+        else {
             DEBUG_PRINT("Illegal val to REG_INT_MASK:%08x\n", (uint32_t)val);
+        }
         break;
     }
 }

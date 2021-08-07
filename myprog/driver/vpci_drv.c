@@ -47,13 +47,13 @@ typedef struct {
     uint32_t vendor_id;
     uint32_t device_id;
             
-    // pio関連
+    // -- pio関連 ---
     //  base:BARに設定されたBase
     uint32_t pio_base;
     uint32_t pio_len;
     uint32_t pio_flag;
 
-    // mmio関連
+    //--- mmio関連 ---
     //  mmio_base:BARに設定されたBase
     //  mmio_addr:ioremap後のアドレス
     uint32_t mmio_base;
@@ -61,20 +61,31 @@ typedef struct {
     uint32_t mmio_flag;
     uint8_t *mmio_addr;
     
-    // DMA関連
+    //--- DMA関連 ---
     dma_addr_t cdma_addr;
     void *cdma_buff;
     void *sdma_src_buff;
     void *sdma_dst_buff;
 
-    // DMA割り込み処理関連
+    //--- DMA割り込み処理関連 ---
     wait_queue_head_t sdma_q;
+    // KICK_MUL2のwaiter
     struct completion cmn;
+    // KICK_MUL4のwaiter
     struct completion cmn4;
+    // DOINTのwaiter
+    struct completion cmn_doint;
+    // irq-handlerがspinで使うリソース
     spinlock_t slock;
-    uint32_t int_status;
+    // irq-handlerが立ち上げるtasklet handler
+    // でcomplete()をコールする
+    // 仕様を確認したら、割禁内部でもコールできるので
+    // 本当は要らないが、練習のためにとっておく。
     struct tasklet_struct tasklet;
-    
+
+    // 現在生じている割り込みの情報（デバッグ用）
+    uint32_t int_status;
+
 } VirtPciData_t;
 
 // インスタンス
@@ -327,8 +338,9 @@ static long vpci_ioctl(
         case VPCI_IOC_DOINT:
             DEBUG_PRINT("VPCI_IOC_DOINT");
             addr = (uint32_t*)(base+REG_CTRL);
+            init_completion(&d->cmn_doint);
             REG_WRITE(addr, INT_DOINT);
-            msleep(1000);
+            wait_for_completion(&d->cmn_doint);
             break;
             
         default:
@@ -418,7 +430,6 @@ static void vpci_tasklet_handler(struct tasklet_struct *arg)
 {
     FENTER;
 
-#if 1
     VirtPciData_t *p = virtPciData;
     if (p->int_status & INT_FINISH_2) {
         complete(&p->cmn);
@@ -429,10 +440,9 @@ static void vpci_tasklet_handler(struct tasklet_struct *arg)
         p->int_status &= INT_FINISH_4_CLEAR;
     }
     if (p->int_status & INT_DOINT) {
-        //complete(&p->cmn4);
+        complete(&p->cmn_doint);
         p->int_status &= ~INT_DOINT;
     }
-#endif// 0
     
     FEXIT;
 }
