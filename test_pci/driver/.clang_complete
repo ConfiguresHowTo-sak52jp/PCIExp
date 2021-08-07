@@ -1,0 +1,5 @@
+-I.
+-I../../rsrc/linux-5.10.55/include
+-I../../rsrc/linux-5.10.55/arch/arm64/include
+-std=gnu99
+
