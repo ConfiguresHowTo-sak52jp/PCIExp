@@ -44,14 +44,13 @@ int main(int ac, char *av[])
     else
         printf("@@@@ Phase1 success! @@@@\n");
 
-#if 1
+#if 0
     // VPCI_IOC_DOINT
     printf("Issued DoInt\n");
     ret = ioctl(fd, VPCI_IOC_DOINT, &p);
     printf("DoInt DONE\n");
 #endif // 0
-    
-#if 0
+
     // VPCI_IOC_WRITE_REG/READ_REGのテスト
     uint32_t wdata = 0;
     int errflag = 0;
@@ -125,7 +124,6 @@ int main(int ac, char *av[])
     }
     if (!errflag)
         printf("@@@@ Phase3 success! @@@@\n");
-#endif // 0
     
     // VPCI_IOC_KICK_MUL2のテスト
     uint32_t max = 0x80000000;
@@ -143,7 +141,7 @@ int main(int ac, char *av[])
                ret, strerror(ret));
         return -1;
     }
-    int errflag = 0;
+    errflag = 0;
     for (int i = 0; i < 4096/4; i++) {
         if (p.outData[i] != expect2[i]*2) {
             printf("@@@ VPCI_IOC_KICK_MUL2 compare fail:expect=%08x,"

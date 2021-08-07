@@ -2,7 +2,7 @@
 #define _VIRT_PCI_H_
 
 // ログを有効にする時は定義
-#define LOG_LEVEL (2)
+#define LOG_LEVEL (1)
 
 #define DEBUG_PRINT(fmt, ...)
 #define INFO_PRINT(fmt, ...)
