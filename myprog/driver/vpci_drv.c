@@ -157,11 +157,7 @@ static long vpci_ioctl(
             wmb();
             addr = (uint32_t *)(base+REG_CTRL);
             REG_WRITE(addr, KICK_2_FLG);
-#if 0
             wait_for_completion(&d->cmn);
-#else
-            msleep(1000);
-#endif
             // HW処理完了->User空間にコピーして返る
             if (copy_to_user(kp->outData, d->cdma_buff, 4*kp->dataNum) != 0) {
                 ERROR_PRINT("copy_to_user() failed!\n");
@@ -425,11 +421,11 @@ static void vpci_tasklet_handler(struct tasklet_struct *arg)
 #if 1
     VirtPciData_t *p = virtPciData;
     if (p->int_status & INT_FINISH_2) {
-        //complete(&p->cmn);
+        complete(&p->cmn);
         p->int_status &= INT_FINISH_2_CLEAR;
     }
     if (p->int_status & INT_FINISH_4) {
-        //complete(&p->cmn4);
+        complete(&p->cmn4);
         p->int_status &= INT_FINISH_4_CLEAR;
     }
     if (p->int_status & INT_DOINT) {

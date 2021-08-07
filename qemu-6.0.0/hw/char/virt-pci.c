@@ -134,7 +134,6 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                         (uint64_t)s->dma_dst_addr,
                         s->dma_size
                 );
-            DEBUG_PRINT("pci_dma_write() success\n");
             // 割り込みマスクされていなかったら割り込み上げる
             s->int_status |= INT_FINISH_2;
             s->reg_val[REG_INT_STATUS/4] = s->int_status;

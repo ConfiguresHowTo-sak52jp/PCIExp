@@ -144,7 +144,6 @@ int main(int ac, char *av[])
         return -1;
     }
     int errflag = 0;
-#if 0
     for (int i = 0; i < 4096/4; i++) {
         if (p.outData[i] != expect2[i]*2) {
             printf("@@@ VPCI_IOC_KICK_MUL2 compare fail:expect=%08x,"
@@ -152,9 +151,36 @@ int main(int ac, char *av[])
             errflag = 1;
          }
     }
-#endif //0
     if (!errflag)
         printf("@@@@ Phase4 success! @@@@\n");
+    free(p.outData);
+
+    // VPCI_IOC_KICK_MUL4のテスト
+    max = 0x40000000;
+    for (int i = 0; i < 4096/4; i++)
+        expect2[i] = rand()%max;
+    expect2[0] = 0x3fffffff;
+    expect2[1023] = 0;
+    p.inData = expect2;
+    p.outData = malloc(4096);
+    p.dataNum = 4096/4;
+    ret = ioctl(fd, VPCI_IOC_KICK_MUL4, &p);
+    if (ret) {
+        printf("ioctl(VPCI_IOC_KICK_MUL4) failed:ret=%d:%s\n",
+               ret, strerror(ret));
+        return -1;
+    }
+    errflag = 0;
+    for (int i = 0; i < 4096/4; i++) {
+        if (p.outData[i] != expect2[i]*4) {
+            printf("@@@ VPCI_IOC_KICK_MUL4 compare fail:expect=%08x,"
+                   "actual=%08x\n @@@", 4*expect2[i], p.outData[i]);
+            errflag = 1;
+         }
+    }
+    if (!errflag)
+        printf("@@@@ Phase5 success! @@@@\n");
+    free(p.outData);
     
     close(fd);
     
