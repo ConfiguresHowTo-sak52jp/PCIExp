@@ -253,6 +253,7 @@ static struct pci_device_id test_pci_ids[] =
 // export pci_device_id
 MODULE_DEVICE_TABLE(pci, test_pci_ids);
 
+#if 0
 // interrupt handler
 void test_do_tasklet(unsigned long unused_data)
 {
@@ -260,6 +261,7 @@ void test_do_tasklet(unsigned long unused_data)
 }
 
 DECLARE_TASKLET(test_tasklet, test_do_tasklet, 0); // no data
+#endif // 0
 
 irqreturn_t test_pci_handler(int irq, void *dev_id)
 {
@@ -271,7 +273,7 @@ irqreturn_t test_pci_handler(int irq, void *dev_id)
 	intmask = inb(dev_data->pio_base + TEST_GET_INTMASK);
 	if(intmask & INT_DO) {
 		// register tasklet
-		tasklet_schedule(&test_tasklet);
+		//tasklet_schedule(&test_tasklet);
 	}
 	if(intmask & INT_CDMA) {
 	}

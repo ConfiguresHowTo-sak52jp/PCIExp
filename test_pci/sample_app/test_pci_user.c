@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "../../custom_device/test_pci/test_pci.h"
+#include "../driver/test_pci.h"
 #define DEVFILE "/dev/test_pci"
 
 int open_device(const char* filename)
@@ -196,13 +196,15 @@ int main(int argc, char const* argv[])
 	int fd;
 
 	fd = open_device(DEVFILE);
-
+	interrupt_test(fd);
+#if 0
 	portio_test(fd);
 	mmio_test(fd);
 	interrupt_test(fd);
 	cdma_test(fd);
 	sdma_test(fd);
-
+#endif // 0
+    
 	close_device(fd);
 	return 0;
 }

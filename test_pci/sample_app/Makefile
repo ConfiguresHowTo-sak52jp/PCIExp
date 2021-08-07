@@ -1,5 +1,5 @@
 all:
-	gcc -m32 -Wall test_pci_user.c -o test_pci_user
+	aarch64-linux-gnu-gcc -static -Wall test_pci_user.c -o test_pci_user
 
 clean:
-	rm test_pci_user
+	rm -f test_pci_user *.o *~

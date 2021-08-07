@@ -22,7 +22,7 @@
 #define BAR_MMIO 0
 #define BAR_PIO  1
 
-#define PCI_VENDOR_ID_TEST 0x1234
+#define PCI_VENDOR_ID_TEST 0xabcd
 #define PCI_DEVICE_ID_TEST 0x0001
 
 #define TEST_PCI_IOSIZE 128

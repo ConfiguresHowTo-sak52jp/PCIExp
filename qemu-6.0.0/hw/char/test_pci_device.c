@@ -1,10 +1,17 @@
 // qemu test PCI virtual device
 
-#include "hw/hw.h"
+#include "qemu/osdep.h"
 #include "hw/pci/pci.h"
+#include "hw/qdev-properties.h"
+#include "qemu/event_notifier.h"
+#include "qemu/module.h"
+#include "sysemu/kvm.h"
+#include "qom/object.h"
+#include "hw/qdev-properties-system.h"
+#include "migration/vmstate.h"
+#include "hw/irq.h"
 
-#include <stdlib.h>
-#include "../../../custom_device/test_pci/test_pci.h"
+#include "hw/char/test_pci.h"
 
 #define TEST_PCI_DEVICE_DEBUG
 
@@ -220,7 +227,7 @@ static const MemoryRegionOps test_pci_pio_ops = {
     },
 };
 
-static int test_pci_init(PCIDevice *pdev)
+static void test_pci_init(PCIDevice *pdev, Error **err)
 {
     TestPCIState *s = TEST_PCI(pdev);
     uint8_t *pci_conf;
@@ -248,17 +255,18 @@ static int test_pci_init(PCIDevice *pdev)
 		}
 
     tprintf("loaded\n");
-    return 0;
+
 }
 
 static void
 test_pci_uninit(PCIDevice *pdev)
 {
     TestPCIState *s = TEST_PCI(pdev);
-
+#if 0
 		memory_region_destroy(&s->mmio);
 		memory_region_destroy(&s->portio);
-
+#endif // 0
+        
     tprintf("unloaded\n");
 }
 
@@ -279,7 +287,7 @@ static void test_pci_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    k->init = test_pci_init;
+    k->realize = test_pci_init;
     k->exit = test_pci_uninit;
     k->vendor_id = PCI_VENDOR_ID_TEST;
     k->device_id = PCI_DEVICE_ID_TEST;
@@ -295,6 +303,10 @@ static const TypeInfo test_pci_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(TestPCIState),
     .class_init    = test_pci_class_init,
+    .interfaces = (InterfaceInfo[]) {
+        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+        { },
+    }
 };
 
 static void test_pci_register_types(void)
