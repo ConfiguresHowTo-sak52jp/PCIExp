@@ -157,7 +157,11 @@ static long vpci_ioctl(
             wmb();
             addr = (uint32_t *)(base+REG_CTRL);
             REG_WRITE(addr, KICK_2_FLG);
+#if 0
             wait_for_completion(&d->cmn);
+#else
+            msleep(1000);
+#endif
             // HW処理完了->User空間にコピーして返る
             if (copy_to_user(kp->outData, d->cdma_buff, 4*kp->dataNum) != 0) {
                 ERROR_PRINT("copy_to_user() failed!\n");
@@ -417,15 +421,23 @@ MODULE_DEVICE_TABLE(pci, vpci_pci_ids);
 static void vpci_tasklet_handler(struct tasklet_struct *arg)
 {
     FENTER;
-    VirtPciData_t *p = (VirtPciData_t *)arg->data;
+
+#if 1
+    VirtPciData_t *p = virtPciData;
     if (p->int_status & INT_FINISH_2) {
-        complete(&p->cmn);
+        //complete(&p->cmn);
         p->int_status &= INT_FINISH_2_CLEAR;
     }
     if (p->int_status & INT_FINISH_4) {
-        complete(&p->cmn4);
+        //complete(&p->cmn4);
         p->int_status &= INT_FINISH_4_CLEAR;
     }
+    if (p->int_status & INT_DOINT) {
+        //complete(&p->cmn4);
+        p->int_status &= ~INT_DOINT;
+    }
+#endif// 0
+    
     FEXIT;
 }
 
@@ -459,7 +471,7 @@ static irqreturn_t vpci_irq_handler(int irq, void *dev_id)
         REG_WRITE(intClearReg, INT_DOINT);
         p->int_status |= INT_DOINT;
     }
-    //tasklet_schedule(&p->tasklet);
+    tasklet_schedule(&p->tasklet);
     spin_unlock_irqrestore(&p->slock, flags);
     
     FEXIT;

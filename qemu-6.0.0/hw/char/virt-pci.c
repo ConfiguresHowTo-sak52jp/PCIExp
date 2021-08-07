@@ -121,10 +121,19 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         if (CTRL_KICK_2(val)) {
             // Buffer1からDMA read->2倍する->Buffer2にDMA write
             pci_dma_read(pdev, s->dma_src_addr, s->dma_buf, s->dma_size);
-            DEBUG_PRINT("pci_dma_read() success\n");
-            multiple(2, s->dma_buf, s->dma_size);
+            DEBUG_PRINT("pci_dma_read() success:src=%lx,dst=%lx,size=%u\n",
+                        (uint64_t)s->dma_src_addr,
+                        (uint64_t)s->dma_buf,
+                        s->dma_size
+                );
+            multiple(2, s->dma_buf, s->dma_size/4);
             DEBUG_PRINT("multiple() success\n");
             pci_dma_write(pdev, s->dma_dst_addr, s->dma_buf, s->dma_size);
+            DEBUG_PRINT("pci_dma_write() success:src=%lx,dst=%lx,size=%u\n",
+                        (uint64_t)s->dma_buf,
+                        (uint64_t)s->dma_dst_addr,
+                        s->dma_size
+                );
             DEBUG_PRINT("pci_dma_write() success\n");
             // 割り込みマスクされていなかったら割り込み上げる
             s->int_status |= INT_FINISH_2;
@@ -139,7 +148,7 @@ static void virt_pci_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         else if (CTRL_KICK_4(val)) {
             // Buffer1からDMA read->4倍する->Buffer2にDMA write
             pci_dma_read(pdev, s->dma_src_addr, s->dma_buf, s->dma_size);
-            multiple(4, s->dma_buf, s->dma_size);
+            multiple(4, s->dma_buf, s->dma_size/4);
             pci_dma_write(pdev, s->dma_dst_addr, s->dma_buf, s->dma_size);
             // 割り込みマスクされていなかったら割り込み上げる
             s->int_status |= INT_FINISH_4;
